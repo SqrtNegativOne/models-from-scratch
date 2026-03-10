@@ -1,0 +1,57 @@
+Q: Why is a PyTorch weight matrix shaped (nout, nin) instead of (nin, nout)?
+A: Because the linear transform is W @ x, where x is a column vector of shape (nin,).
+   For the output to have shape (nout,), W must be (nout, nin).
+   This is the standard convention in PyTorch (e.g. nn.Linear stores weight as (out_features, in_features)).
+
+Q: What is torch.nn.Parameter and how does it differ from a regular torch.Tensor?
+A: Parameter is a Tensor subclass that has requires_grad=True by default and is meant to
+   signal "this is a learnable weight". The key practical difference: when you pass a list of
+   Parameters to an optimizer, the optimizer tracks and updates them. A plain tensor with
+   requires_grad=True would work too, but Parameter is the convention.
+
+Q: Why must you call optimizer.zero_grad() before loss.backward()?
+A: PyTorch accumulates gradients — each .backward() call *adds* to .grad rather than replacing it.
+   If you skip zero_grad(), gradients from previous steps pile up and corrupt the update.
+   The accumulation behavior is intentional for cases like gradient accumulation over mini-batches.
+
+Q: What does loss.backward() actually do?
+A: It walks the computation graph backward from the loss tensor and computes d(loss)/d(param)
+   for every tensor that has requires_grad=True, storing the result in param.grad.
+   The graph was built automatically during the forward pass.
+
+Q: What is the difference between loss.item() and loss.data?
+A: .item() returns a plain Python float (detached from the graph, no gradient tracking).
+   .data returns the underlying tensor (also detached, but still a Tensor object).
+   Use .item() for printing/logging — it's explicit and safe.
+
+Q: What does torch.no_grad() do and when should you use it?
+A: It disables gradient tracking for all operations inside the block. PyTorch won't build
+   a computation graph, saving memory and compute. Use it for inference and evaluation —
+   any time you won't be calling .backward().
+
+Q: How do you change the learning rate mid-training when using torch.optim?
+A: Mutate the 'lr' key inside optimizer.param_groups:
+     for g in optimizer.param_groups:
+         g['lr'] = new_lr
+   Call this before optimizer.step(). This is also what PyTorch's LR scheduler objects do internally.
+
+Q: What is the difference between torch.stack and torch.cat?
+A: torch.cat concatenates existing tensors along an existing dimension (no new dim added).
+   torch.stack creates a new dimension and stacks tensors along it.
+   Example: stacking two (4,) tensors → (2, 4) with stack, or (8,) with cat.
+   In the KV cache: torch.stack([ki[hs:hs+head_dim] for ki in keys]) creates a (T, head_dim) matrix.
+
+Q: What does p.numel() return?
+A: The total number of scalar elements in a tensor. A weight matrix of shape (64, 16) has
+   numel() == 1024. Useful for counting total model parameters:
+     sum(p.numel() for p in params)
+
+Q: Why does torch.softmax need a dim argument?
+A: Softmax normalizes values to sum to 1, but a tensor can have multiple dimensions.
+   dim tells it *which axis* to normalize along.
+   For a 1D logits vector use dim=0. For batched logits of shape (batch, vocab) use dim=-1.
+
+Q: What does probs.tolist() do and why is it needed for random.choices?
+A: .tolist() converts a PyTorch tensor to a plain Python list of floats.
+   random.choices() is a stdlib function that doesn't understand tensors, so you must
+   convert first. For a 1D tensor it returns a flat list.
